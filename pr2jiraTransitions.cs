@@ -21,27 +21,23 @@ namespace func_test
 {
 public static class MyHttpTrigger
 {
-[FunctionName("MyHttpTrigger")]
+[FunctionName("c72a634c-7f41-c40f-1094-87a090d84b5d")]
 public static async Task<IActionResult> Run(
 	[HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequestMessage req,
 	ILogger log)
 {
-	log.LogInformation("C# HTTP trigger function processed a request.");
+	string jiraToken = System.Environment.GetEnvironmentVariable("Secret");
 
-	//string sourceRefName = "refs/heads/mytopic";
+	log.LogInformation("APP : C# HTTP trigger function processed a request.");
 
-
-
+	log.LogInformation($"DEBUGGING remove this line before this hits prod {jiraToken}");
 	dynamic data = await req.Content.ReadAsAsync<object>();
-    // Get the pull request object from the service hooks payload
+	// Get the pull request object from the service hooks payload
 	dynamic jObject = JsonConvert.DeserializeObject(data.ToString());
 	// Get the pull request id
 	int pullRequestId;
 	if (!Int32.TryParse(jObject.resource.pullRequestId.ToString(), out pullRequestId))
-		return new BadRequestObjectResult("wtf");
-    ;
-
-
+		return new BadRequestObjectResult("APP: payload not json?");
 
 	// Get the pull request title
 	string pullRequestTitle = jObject.resource.title;
@@ -50,20 +46,73 @@ public static async Task<IActionResult> Run(
 	if (Regex.Match(sourceRefName, "[A-Z]{1,10}-[0-9]{1,8}").Success) {
 		Regex regex = new Regex("[A-Z]{1,10}-[0-9]{1,8}");
 		Match match = regex.Match(sourceRefName);
-		string ticket = match.Groups[1].Value;
-		IssueToTransition(ticket).Wait();
+		string jiraIssue = match.Groups[0].Value;
 
-		return new BadRequestObjectResult($"sourceRefName from DevOps test {sourceRefName}\n");
+		log.LogInformation($"APP IssueToTransition: ticket id {jiraIssue}");
+		await IssueToTransition(jiraIssue, jiraToken, log);
+
+		log.LogInformation($"APP: sourceRefName from DevOps test {sourceRefName}\n");
+		return (ActionResult) new OkObjectResult($"APP: sourceRefName from DevOps test {sourceRefName}\n");
 	} else {
-		if (Regex.Match(sourceRefName, "mytopic").Success)
-			return new BadRequestObjectResult($"sourceRefName from DevOps test {sourceRefName}\n");
-		else
-			return new BadRequestObjectResult($"Unexpected value {sourceRefName}\n");
+		if (Regex.Match(sourceRefName, "mytopic").Success) {
+			log.LogInformation($"APP: sourceRefName from Azure DevOps test : {sourceRefName}\n");
+			return (ActionResult) new OkObjectResult($"APP: sourceRefName from Azure DevOps test : {sourceRefName}\n");
+		} else {
+			log.LogInformation($"APP: Unexpected value {sourceRefName}\n");
+			return new BadRequestObjectResult($"APP: Unexpected value {sourceRefName}\n");
+		}
 	}
 }
 
 
-private static async Task UpdateTransition(string jiraServer, string ticketPath, string jiraToken, string transitionUpdateJson)
+static async Task IssueToTransition(string jiraIssue, string jiraToken, ILogger log)
+{
+	string jiraServer = "https://cbcradiocanada.atlassian.net";
+	string ticketPath = "/rest/api/2/issue/" + jiraIssue + "/transitions";
+	string url = jiraServer + ticketPath;
+
+	log.LogInformation($"APP IssueToTransition: url={url}");
+	string codeReviewId = await GetReviewId(url, jiraToken, log);
+	//string codeReviewId = ""; //  I want ^ to provide this
+
+	string transitionUpdateJson = "{ \"update\": {  \"comment\": [  {  \"add\": {  \"body\": \"Comment added when resolving issue\"  }  }  ]  },  \"transition\": {  \"id\": \"" + codeReviewId + "\"  } }";
+
+	log.LogInformation($"APP IssueToTransition: {jiraServer}, {ticketPath}, {transitionUpdateJson}");
+	await UpdateTransition(jiraServer, ticketPath, jiraToken, transitionUpdateJson, log);
+}
+
+
+static async Task<string> GetReviewId(string url, string jiraToken, ILogger log)
+{
+	string jiraTransitions = "";
+
+	using (HttpClient client = new HttpClient()) {
+		client.DefaultRequestHeaders.Accept.Clear();
+		client.DefaultRequestHeaders.Accept.Add(
+			new MediaTypeWithQualityHeaderValue("application/json"));
+		client.DefaultRequestHeaders.Add("Authorization", "Basic " + jiraToken);
+		jiraTransitions = await client.GetStringAsync(url);
+	}
+
+	JObject transitionsJson = JObject.Parse(jiraTransitions);
+	var codeReviewId = transitionsJson["transitions"].Where(a => (string)a["name"] == "Code Review")
+			   .Select(a => (string)a["id"])
+			   .FirstOrDefault();
+
+	if (string.IsNullOrEmpty(codeReviewId)) {
+		// create an error
+		Console.WriteLine("APP GetReviewId: 'Code Review' not in ticket, this is ok \ndebugging details:\n\t" + jiraTransitions);
+		return "null";
+	} else {
+		// Id found
+		Console.WriteLine("APP GetReviewId: 'Code Review' found " + codeReviewId);
+		return codeReviewId;
+	}
+}
+
+
+
+private static async Task UpdateTransition(string jiraServer, string ticketPath, string jiraToken, string transitionUpdateJson, ILogger log)
 {
 	//Console.WriteLine(jiraServer + " " + ticketPath + " " + jiraToken + " " + transitionUpdateJson);
 
@@ -75,54 +124,7 @@ private static async Task UpdateTransition(string jiraServer, string ticketPath,
 		response = var.StatusCode.ToString();
 	}
 
-	Console.WriteLine("UpdateTransition: attempt results = " + response);
-}
-
-
-static async Task IssueToTransition(string jiraIssue)
-{
-	string jiraToken = System.Environment.GetEnvironmentVariable("Secret");
-	//string jiraToken = "ZGFsZS5laW5hcnNvbkBjYmMuY2E6Z0phVjI4V0ZwWktEOHFrS2hKalNCMTM2";
-	string jiraServer = "https://cbcradiocanada.atlassian.net";
-	string ticketPath = "/rest/api/2/issue/" + jiraIssue + "/transitions";
-	string url = jiraServer + ticketPath;
-    return new BadRequestObjectResult($"Unexpected value {jiraIssue}\n");
-	string codeReviewId = await GetReviewId(url, jiraToken);
-	//string codeReviewId = ""; //  I want ^ to provide this
-
-	string transitionUpdateJson = "{ \"update\": {  \"comment\": [  {  \"add\": {  \"body\": \"Comment added when resolving issue\"  }  }  ]  },  \"transition\": {  \"id\": \"" + codeReviewId + "\"  } }";
-
-	// await UpdateTransition(jiraServer, ticketPath, jiraToken, transitionUpdateJson);
-}
-
-
-
-static async Task<string> GetReviewId(string url, string jiraToken)
-{
-	string jiraTransitions = "";
-
-	using (HttpClient client = new HttpClient()) {
-		client.DefaultRequestHeaders.Accept.Clear();
-		client.DefaultRequestHeaders.Accept.Add(
-			new MediaTypeWithQualityHeaderValue("application/json"));
-		client.DefaultRequestHeaders.Add("Authorization", "Basic ZGFsZS5laW5hcnNvbkBjYmMuY2E6Z0phVjI4V0ZwWktEOHFrS2hKalNCMTM2");
-		jiraTransitions = await client.GetStringAsync(url);
-	}
-
-	JObject transitionsJson = JObject.Parse(jiraTransitions);
-	var codeReviewId = transitionsJson["transitions"].Where(a => (string)a["name"] == "Code Review")
-			   .Select(a => (string)a["id"])
-			   .FirstOrDefault();
-
-	if (string.IsNullOrEmpty(codeReviewId)) {
-		// create an error
-		Console.WriteLine("GetReviewId: 'Code Review' not in ticket " + jiraTransitions);
-		return "null";
-	} else {
-		// Id found
-		Console.WriteLine("GetReviewId: 'Code Review' found " + codeReviewId);
-		return codeReviewId;
-	}
+	log.LogInformation("APP UpdateTransition: attempt results = " + response);
 }
 }
 }
