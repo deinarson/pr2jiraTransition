@@ -10,7 +10,7 @@ curl -d "$(cat HD246-test.json | sed 's/HD-246/mytopic/g')" -v  http://localhost
 
 sleep 3
 echo  final test change transition of ticket
-curl -d "$(cat HD246-test.json | sed 's/HD-246/HD-246/g')" -v  http://localhost:7071/api/${FUNCTION_NAME}  -H "Content-Type: application/json" 
+curl -d "$(cat HD246-test.json)" -v  http://localhost:7071/api/${FUNCTION_NAME}  -H "Content-Type: application/json" 
 
 
 exit
