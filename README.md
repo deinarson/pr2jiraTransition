@@ -5,7 +5,7 @@ This code does not work, or at least at the time it was written `Azure` was brok
 ## What?
 First I debugged for a couple days, copied official examples and never got any of these things to work. When I told azure support that I want to to understand why the official docs did not work.  I requested they take official doc that I was using and make it work.  The support agent got back to me with screen shots of how he did it using the web interface...
 
-Then I repeated, "I need to launch more then 100 of them. are you going to do that for me?"
+Then I repeated, "I need to launch more then 100 of them. are you going to do that for me?" the examples I gave were scripts not hot to do it via the web.
 
 # Problem with azure support?
 When you are scripting something that doesn't work, the support person should help you solve your issue, not show you how to do something else.
